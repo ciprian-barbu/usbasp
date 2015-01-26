@@ -17,11 +17,15 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
+#include "clock.h"
+#include <util/delay.h>     /* for _delay_ms() */
+
+#include <string.h>
+#include <stdio.h>
 
 #include "usbasp.h"
 #include "usbdrv.h"
 #include "isp.h"
-#include "clock.h"
 #include "tpi.h"
 #include "tpi_defs.h"
 
@@ -37,17 +41,32 @@ static unsigned int prog_pagesize;
 static uchar prog_blockflags;
 static uchar prog_pagecounter;
 
+void dbg(char *msg)
+{
+	int i;
+	int len = strlen(msg);
+	for (i = 0; i < len; i++) {
+		while ((UCSRA & (1 << UDRE)) == 0) {};
+		UDR = msg[i];
+	}
+}
+
 uchar usbFunctionSetup(uchar data[8]) {
 
 	uchar len = 0;
+	char msg[9];
 
+	sprintf(msg, "s %d\n", data[1]);
+	dbg(msg);
 	if (data[1] == USBASP_FUNC_CONNECT) {
 
 		/* set SCK speed */
 		if ((PINC & (1 << PC2)) == 0) {
 			ispSetSCKOption(USBASP_ISP_SCK_8);
+			dbg("s SW\n");
 		} else {
 			ispSetSCKOption(prog_sck);
+			dbg("s HW\n");
 		}
 
 		/* set compatibility mode of address delivering */
@@ -126,6 +145,8 @@ uchar usbFunctionSetup(uchar data[8]) {
 
 		/* set sck option */
 		prog_sck = data[2];
+		sprintf(msg, "s sck %d\n", prog_sck);
+		dbg(msg);
 		replyBuffer[0] = 0;
 		len = 1;
 
@@ -140,7 +161,7 @@ uchar usbFunctionSetup(uchar data[8]) {
 
 		/* RST low */
 		ISP_OUT &= ~(1 << ISP_RST);
-		ledRedOn();
+		ledGreenOn();
 
 		clockWait(16);
 		tpi_init();
@@ -306,25 +327,40 @@ int main(void) {
 	/* no pullups on USB and ISP pins */
 	PORTD = 0;
 	PORTB = 0;
-	/* all outputs except PD2 = INT0 */
-	DDRD = ~(1 << 2);
+	/* all outputs except PD2 = INT0 and PD3 = INT1*/
+	//DDRD = ~((1 << 2) | (1 << 3) | (1 << 7));
+	DDRD = 0xe3;
+	PORTD = 0x70;
 
 	/* output SE0 for USB reset */
 	DDRB = ~0;
 	j = 0;
 	/* USB Reset by device only required on Watchdog Reset */
+	usbDeviceDisconnect();  /* enforce re-enumeration, do this while interrupts are disabled! */
 	while (--j) {
 		i = 0;
 		/* delay >10ms for USB reset */
 		while (--i)
 			;
 	}
+	usbDeviceConnect();
 	/* all USB and ISP pins inputs */
 	DDRB = 0;
 
 	/* all inputs except PC0, PC1 */
 	DDRC = 0x03;
 	PORTC = 0xfe;
+
+	/* Serial init */
+	//UCSRB = (1 << RXEN) | (1 << TXEN);
+	UCSRB = (1 << TXEN);
+	UCSRC = (1 << URSEL) | (1 << UCSZ0) | (1 << UCSZ1);
+#define USART_BAUDRATE 9600
+#define BAUD_PRESCALE (((F_CPU / (USART_BAUDRATE * 16UL))) - 1)
+	UBRRH = (BAUD_PRESCALE >> 8);
+	UBRRL = BAUD_PRESCALE;
+
+	dbg("DBG\n");
 
 	/* init timer */
 	clockInit();

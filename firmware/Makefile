@@ -7,7 +7,8 @@
 # TARGET=atmega8    HFUSE=0xc9  LFUSE=0xef
 # TARGET=atmega48   HFUSE=0xdd  LFUSE=0xff
 # TARGET=at90s2313
-TARGET=atmega8
+#TARGET=atmega8 HFUSE=0xc9 LFUSE=0xef
+TARGET=atmega16
 HFUSE=0xc9
 LFUSE=0xef
 
